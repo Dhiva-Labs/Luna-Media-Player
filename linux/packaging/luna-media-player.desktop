@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Luna Media Player
+GenericName=Media Player
+Comment=Play your music and videos, in an XP-era player
+Exec=luna-media-player %F
+Icon=luna-media-player
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Video;Player;
+Keywords=music;video;player;media;audio;movie;
+StartupWMClass=com.dhivalabs.luna_media_player
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/opus;audio/mp4;audio/aac;audio/x-wav;audio/x-ms-wma;audio/x-matroska;audio/aiff;audio/x-ape;audio/x-wavpack;audio/ac3;audio/vnd.dts;audio/amr;audio/x-musepack;video/mp4;video/x-matroska;video/x-msvideo;video/webm;video/quicktime;video/x-ms-wmv;video/mpeg;video/mp2t;video/x-flv;video/3gpp;video/3gpp2;video/ogg;video/x-ms-asf;video/vnd.rn-realvideo;application/vnd.rn-realmedia;

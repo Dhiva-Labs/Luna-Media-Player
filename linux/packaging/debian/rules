@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+# Luna Media Player ships a prebuilt Flutter Linux bundle, so there is nothing
+# to compile here: the payload tree is simply installed. Flutter cannot be
+# built on Launchpad's builders, so a from-source build is intentionally not
+# used.
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+override_dh_auto_build:
+override_dh_auto_test:
+
+override_dh_auto_install:
+	mkdir -p debian/luna-media-player
+	cp -a usr debian/luna-media-player/
+
+# The bundled Flutter engine and libmpv are private to the app and must not be
+# scanned for system dependencies, nor stripped: dh_strip on libapp.so leaves
+# an app that cannot start.
+override_dh_shlibdeps:
+override_dh_strip:
+override_dh_strip_nondeterminism:

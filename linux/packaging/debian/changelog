@@ -1,0 +1,15 @@
+luna-media-player (1.0.0) noble; urgency=medium
+
+  * First release.
+  * XP-era player interface: menu bar, feature taskbar, royal-blue toolbars,
+    the white library and the silver-glass transport.
+  * Library that scans folders, reads tags, and sorts by artist, album and
+    track number, with live search and an All Music / All Video split.
+  * Playback of the common audio and video formats through libmpv, with
+    shuffle, repeat off/all/one, seek, volume and mute.
+  * Eight visualisations: Ambience, Alchemy, Plenty, Bars, Ocean Mist, Scope,
+    Battery and Fire Storm.
+  * File associations and command-line arguments, so files and folders open
+    from the file manager or the shell.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Wed, 22 Jul 2026 02:41:26 +0530

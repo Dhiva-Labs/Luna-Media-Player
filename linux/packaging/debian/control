@@ -1,0 +1,23 @@
+Source: luna-media-player
+Section: sound
+Priority: optional
+Maintainer: Dhivakar R <dhivakar1010@gmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/Dhiva-Labs/Luna-Media-Player
+Rules-Requires-Root: no
+
+Package: luna-media-player
+Architecture: amd64
+Depends: ${misc:Depends}, libgtk-3-0, libglib2.0-0, libmpv2 | libmpv1
+Description: XP-era music and video player for the Linux desktop
+ Luna Media Player plays the music and video already on your machine,
+ wrapped in the look of the desktop players of 2004: a library with tag
+ reading and search, a Now Playing list, and eight flowing visualisations.
+ .
+ Playback is handled by libmpv, so it opens essentially any format your
+ system can decode — MP3, FLAC, WAV, OGG, Opus, AAC, M4A and WMA, as well
+ as MP4, MKV, AVI, WebM, MOV and WMV. Files and folders open from the file
+ manager or the command line.
+ .
+ Published by Dhiva-Labs.
