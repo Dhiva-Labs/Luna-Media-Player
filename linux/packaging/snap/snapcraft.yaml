@@ -1,0 +1,65 @@
+name: luna-media-player
+title: Luna Media Player
+version: '1.0.0'
+summary: XP-era music and video player for the Linux desktop
+description: |
+  Luna Media Player plays the music and video already on your machine,
+  wrapped in the look of the desktop players of 2004: a library with tag
+  reading and search, a Now Playing list, and eight flowing visualisations
+  — Ambience, Alchemy, Plenty, Bars, Ocean Mist, Scope, Battery and
+  Fire Storm.
+
+  Playback is handled by libmpv, so it opens essentially any format your
+  system can decode: MP3, FLAC, WAV, OGG, Opus, AAC, M4A and WMA, as well
+  as MP4, MKV, AVI, WebM, MOV and WMV.
+
+  No accounts, no streaming — it reads the files you already have.
+
+  Published by Dhiva-Labs.
+license: MIT
+website: https://github.com/Dhiva-Labs/Luna-Media-Player
+contact: dhivakar1010@gmail.com
+source-code: https://github.com/Dhiva-Labs/Luna-Media-Player
+issues: https://github.com/Dhiva-Labs/Luna-Media-Player/issues
+
+grade: stable
+confinement: strict
+# core24 is not optional: the bundle is built on Ubuntu 24.04 and links
+# glibc 2.39, which core22 does not carry.
+base: core24
+compression: lzo
+
+apps:
+  luna-media-player:
+    command: luna_media_player
+    extensions: [gnome]
+    plugs:
+      - home
+      - removable-media
+      - audio-playback
+      - opengl
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+    environment:
+      # The bundled libmpv resolves through the binary's $ORIGIN/lib RUNPATH,
+      # but its own dependency chain (libdvdnav, libmujs, liblua, libsixel …)
+      # comes from the staged libmpv2 packages below.
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+
+parts:
+  luna-media-player:
+    plugin: dump
+    # Self-contained: this folder holds the prebuilt Flutter Linux bundle
+    # (the luna_media_player binary + data/ + lib/). tool/make_snap.sh fills
+    # it from build/linux/x64/release/bundle.
+    source: ./bundle
+
+  mpv-runtime:
+    plugin: nil
+    # Not for libmpv itself — the app ships its own — but for the ffmpeg,
+    # libass, dvdnav and lua libraries it links against, which the gnome
+    # extension does not provide.
+    stage-packages:
+      - libmpv2
