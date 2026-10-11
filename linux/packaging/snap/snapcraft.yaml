@@ -46,7 +46,14 @@ apps:
       # The bundled libmpv resolves through the binary's $ORIGIN/lib RUNPATH,
       # but its own dependency chain (libdvdnav, libmujs, liblua, libsixel …)
       # comes from the staged libmpv2 packages below.
-      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+      # liblapack/libblas (pulled in through ffmpeg) live in blas/ and lapack/
+      # subdirectories; Ubuntu reaches them through alternatives symlinks,
+      # which do not survive staging, so add the directories explicitly.
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib/x86_64-linux-gnu/blas:$SNAP/usr/lib/x86_64-linux-gnu/lapack:$LD_LIBRARY_PATH
+      # snapd points HOME at the snap's private data dir; the library's
+      # default folder is the real ~/Music. Settings stay in the snap's XDG
+      # dirs through shared_preferences.
+      HOME: $SNAP_REAL_HOME
 
 parts:
   luna-media-player:
