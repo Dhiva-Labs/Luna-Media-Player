@@ -6,16 +6,26 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-16
+
 ### Added
 
 - Linux ARM64 (aarch64) support: the build, `.deb` and snap scripts build for
   the architecture of the machine they run on, and CI builds, tests and
   packages both x86-64 and ARM64, attaching the ARM64 `.deb` to each release.
+- Snap packaging (`luna-media-player`, strictly confined, core24) for amd64 and
+  arm64, built and smoke-run in CI.
+- Debian source packaging for the Ubuntu PPA (`tool/make_ppa.sh`).
 
 ### Fixed
 
 - The snap's `LD_LIBRARY_PATH` named the x86-64 library directories only; it
   now follows the architecture the snap is built for.
+- The snap failed to start because ffmpeg's `libblas.so.3` and
+  `liblapack.so.3` were not on its library path; both directories are now on
+  `LD_LIBRARY_PATH`.
+- Inside the snap the default library folder resolved to the snap's private
+  data directory instead of the real `~/Music`.
 
 ## [1.0.0] — 2026-07-18
 
@@ -43,4 +53,5 @@ First release.
 - Debian packaging (`tool/make_deb.sh`), which bundles libmpv so the player
   runs on machines without mpv installed.
 
+[1.0.1]: https://github.com/Dhiva-Labs/Luna-Media-Player/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Dhiva-Labs/Luna-Media-Player/releases/tag/v1.0.0
