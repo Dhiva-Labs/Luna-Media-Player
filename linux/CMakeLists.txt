@@ -135,8 +135,13 @@ endif()
 
 # Bundle libmpv (fetched by tool/fetch_libmpv.sh) so the app plays media on
 # machines without a system libmpv. main.dart loads it from the bundle's lib/.
+# The multiarch directory is x86_64-linux-gnu or aarch64-linux-gnu.
+set(MPV_TRIPLET "${CMAKE_LIBRARY_ARCHITECTURE}")
+if(NOT MPV_TRIPLET)
+  set(MPV_TRIPLET "${CMAKE_SYSTEM_PROCESSOR}-linux-gnu")
+endif()
 file(GLOB MPV_BUNDLED_LIB
-  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/mpv/usr/lib/x86_64-linux-gnu/libmpv.so.2.*")
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/mpv/usr/lib/${MPV_TRIPLET}/libmpv.so.2.*")
 if(MPV_BUNDLED_LIB)
   list(GET MPV_BUNDLED_LIB 0 MPV_BUNDLED_LIB_FILE)
   install(FILES "${MPV_BUNDLED_LIB_FILE}"

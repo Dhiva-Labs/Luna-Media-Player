@@ -1,5 +1,8 @@
 # Luna Media Player
 
+[![ARM64 builds](https://github.com/Dhiva-Labs/Luna-Media-Player/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dhiva-Labs/Luna-Media-Player/actions/workflows/ci.yml)
+![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational?logo=linux&logoColor=white)
+
 An XP-era music and video player for Ubuntu and other Linux desktops, built
 with Flutter. It plays the media already on your machine — no accounts, no
 streaming. Named after Luna, the Windows XP theme whose look it borrows.
@@ -40,7 +43,10 @@ That is the whole build. If the system has no libmpv (media_kit's playback
 engine), the script first runs `tool/fetch_libmpv.sh`, which downloads the
 Ubuntu packages and extracts them into `third_party/mpv` — no root needed.
 The library is bundled into the app, so the result runs on machines that
-never installed mpv.
+never installed mpv. The scripts build for the machine they run on, x86-64 or
+ARM64: Flutter cannot cross-compile the Linux target, so the bundle lands in
+`build/linux/x64/release/bundle` on an x86-64 machine and in
+`build/linux/arm64/release/bundle` on an ARM64 one.
 
 To install a launcher entry for the current user:
 
@@ -53,9 +59,12 @@ tool/install.sh
 Build a Debian package and install it:
 
 ```sh
-tool/make_deb.sh                  # writes dist/luna-media-player_<version>_amd64.deb
-sudo apt install ./dist/luna-media-player_1.0.0_amd64.deb
+tool/make_deb.sh                  # writes dist/luna-media-player_<version>_<arch>.deb
+sudo apt install ./dist/luna-media-player_1.0.0_amd64.deb    # x86-64
+sudo apt install ./dist/luna-media-player_1.0.0_arm64.deb    # ARM64 (aarch64)
 ```
+
+The Releases page carries a prebuilt `_amd64.deb` and `_arm64.deb`.
 
 The package registers a launcher and file associations, so audio and video
 files offer **Open With → Luna Media Player**. Files and folders can also be
@@ -68,8 +77,10 @@ luna-media-player track.flac clip.mkv    # individual files
 
 ## Platform support
 
-Linux (x86_64) is the supported and tested platform — the repository contains
-only the `linux/` desktop runner. Windows and macOS builds are not provided.
+Linux is the supported and tested platform, on x86-64 and on ARM64
+(aarch64): CI builds, tests and smoke-runs the app on both. The repository
+contains only the `linux/` desktop runner. Windows and macOS builds are not
+provided.
 
 ## Licence
 

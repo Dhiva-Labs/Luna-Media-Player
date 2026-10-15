@@ -12,6 +12,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=tool/arch.sh
+. "$ROOT/tool/arch.sh"
 TP="$ROOT/third_party/mpv"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -21,7 +23,7 @@ if pkg-config --exists mpv 2>/dev/null; then
   exit 0
 fi
 
-if [ -f "$TP/usr/lib/x86_64-linux-gnu/pkgconfig/mpv.pc" ]; then
+if [ -f "$TP/usr/lib/$TRIPLET/pkgconfig/mpv.pc" ]; then
   echo "third_party/mpv already populated."
   exit 0
 fi
@@ -39,7 +41,7 @@ done
 # demand every dev package mpv was built against. The prefix is rewritten to
 # the extracted tree so plain PKG_CONFIG_PATH is enough (a sysroot would
 # corrupt every other package's paths, GTK included).
-PC="$TP/usr/lib/x86_64-linux-gnu/pkgconfig/mpv.pc"
+PC="$TP/usr/lib/$TRIPLET/pkgconfig/mpv.pc"
 sed -i '/^Requires.private:/d' "$PC"
 sed -i "s|^prefix=/usr|prefix=$TP/usr|" "$PC"
 

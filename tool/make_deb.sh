@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Packages the release bundle as a .deb into dist/.
+# Packages the release bundle as a .deb into dist/, for the architecture of the
+# machine it runs on (amd64 or arm64).
 #
 # The app ships its own libmpv.so.2, but that library still needs the ffmpeg/
 # libass stack at runtime, so the package depends on libmpv2 — apt then pulls
@@ -7,7 +8,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUNDLE="$ROOT/build/linux/x64/release/bundle"
+# shellcheck source=tool/arch.sh
+. "$ROOT/tool/arch.sh"
+BUNDLE="$ROOT/build/linux/$FLUTTER_ARCH/release/bundle"
 PKG="luna-media-player"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -62,7 +65,7 @@ Package: $PKG
 Version: $VERSION
 Section: sound
 Priority: optional
-Architecture: amd64
+Architecture: $DEB_ARCH
 Depends: libmpv2 | libmpv1, libgtk-3-0
 Installed-Size: $INSTALLED_SIZE
 Maintainer: Dhivakar <dhivakar1010@gmail.com>
@@ -77,6 +80,6 @@ Description: XP-era music and video player for the Linux desktop
 EOF
 
 mkdir -p "$ROOT/dist"
-OUT="$ROOT/dist/${PKG}_${VERSION}_amd64.deb"
+OUT="$ROOT/dist/${PKG}_${VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$OUT" > /dev/null
 echo "$OUT"

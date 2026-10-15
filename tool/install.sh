@@ -6,7 +6,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUNDLE="$ROOT/build/linux/x64/release/bundle"
+# shellcheck source=tool/arch.sh
+. "$ROOT/tool/arch.sh"
+BUNDLE="$ROOT/build/linux/$FLUTTER_ARCH/release/bundle"
 DEST="$HOME/.local/opt/luna_media_player"
 
 if [ ! -x "$BUNDLE/luna_media_player" ]; then
