@@ -1,30 +1,87 @@
 name: CI
 
+# Analyses, tests, builds and packages the Linux desktop app for x64 and arm64,
+# each on a native runner: Flutter cannot cross-compile the desktop target, so
+# every architecture is built on a machine of that architecture. The snap jobs
+# pack the bundle the matching Linux job built into the amd64 and arm64 snaps.
+#
+# Every run keeps the packages as workflow artifacts. When a GitHub release is
+# published, the release job attaches the .deb of each architecture to it,
+# skipping any asset the release already has (so a hand-uploaded package is
+# never replaced, and a release published with notes only is completed).
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The Flutter release Luna Media Player is developed with. There are no
+  # Flutter SDK archives for linux-arm64, so every leg installs the SDK the
+  # same way: a shallow clone of the release tag.
+  FLUTTER_VERSION: '3.44.6'
 
 jobs:
-  build:
-    name: Analyse, test and build (Linux)
-    runs-on: ubuntu-latest
-
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            deb_arch: amd64
+            runner: ubuntu-24.04
+            elf_machine: x86-64
+            deb_artifact: luna-media-player-deb
+          - arch: arm64
+            deb_arch: arm64
+            runner: ubuntu-24.04-arm
+            elf_machine: ARM aarch64
+            deb_artifact: luna-media-player-deb-arm64
+    env:
+      BUNDLE: build/linux/${{ matrix.arch }}/release/bundle
+      ELF_MACHINE: ${{ matrix.elf_machine }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install Linux build dependencies
+      # No libmpv-dev: tool/build.sh fetches libmpv for this architecture into
+      # third_party/mpv and the build bundles it, exactly as a release build.
+      # xvfb, xauth, xdotool, dbus-x11: the smoke run of the installed .deb.
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            file xvfb xauth xdotool dbus-x11
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
 
-      - run: flutter pub get
+      - name: Configure Flutter
+        run: |
+          uname -m
+          flutter config --no-analytics --enable-linux-desktop
+          flutter precache --linux
+          flutter --version
+          dart --version
+
+      - name: Get packages
+        run: flutter pub get
 
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
@@ -36,12 +93,268 @@ jobs:
         run: flutter test
 
       - name: Build release bundle
-        run: flutter build linux --release
+        run: tool/build.sh
+
+      # lib/libmpv.so.2 is the libmpv fetched for this architecture and
+      # bundled by linux/CMakeLists.txt.
+      - name: Assert every ELF file in the bundle is ${{ matrix.elf_machine }}
+        run: |
+          for f in luna_media_player lib/libapp.so lib/libflutter_linux_gtk.so lib/libmpv.so.2; do
+            [ -f "$BUNDLE/$f" ] || { echo "::error::missing $BUNDLE/$f"; exit 1; }
+          done
+          checked=0
+          bad=0
+          while IFS= read -r -d '' f; do
+            desc="$(file -b "$f")"
+            case "$desc" in ELF*) ;; *) continue ;; esac
+            echo "$f: $desc"
+            checked=$((checked + 1))
+            case "$desc" in
+              *"$ELF_MACHINE"*) ;;
+              *) echo "::error file=$f::not $ELF_MACHINE"; bad=1 ;;
+            esac
+          done < <(find "$BUNDLE" -type f -print0)
+          echo "checked $checked ELF files"
+          [ "$checked" -ge 4 ] && [ "$bad" -eq 0 ]
 
       - name: Build Debian package
         run: tool/make_deb.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Check the package
+        run: |
+          VERSION="$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)"
+          DEB="dist/luna-media-player_${VERSION}_${{ matrix.deb_arch }}.deb"
+          ls -l dist
+          [ "$(ls dist | wc -l)" -eq 1 ]
+          dpkg-deb --info "$DEB"
+          [ "$(dpkg-deb --field "$DEB" Architecture)" = "${{ matrix.deb_arch }}" ]
+          sudo apt-get install -y "./$DEB"
+          file /opt/luna-media-player/luna_media_player | grep "$ELF_MACHINE"
+          file /opt/luna-media-player/lib/libmpv.so.2 | grep "$ELF_MACHINE"
+
+      # The GTK runner shows the window only once Flutter has rendered its
+      # first frame, so a visible "Luna Media Player" window proves the AOT
+      # snapshot runs on this architecture. Starting the app also loads
+      # libmpv, which pulls in the whole ffmpeg chain the .deb depends on.
+      - name: Smoke-run the installed app (Xvfb)
+        timeout-minutes: 5
+        run: |
+          cat > "$RUNNER_TEMP/smoke.sh" <<'EOF'
+          log="$RUNNER_TEMP/smoke.log"
+          luna-media-player > "$log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 90); do
+            if xdotool search --onlyvisible --name '^Luna Media Player$' > /dev/null 2>&1; then
+              echo "Luna Media Player window is up after ${i}s"
+              sleep 5
+              kill -0 "$pid" || { echo "luna-media-player died after showing its window"; cat "$log"; exit 1; }
+              kill "$pid"
+              cat "$log"
+              exit 0
+            fi
+            kill -0 "$pid" 2> /dev/null || { echo "luna-media-player exited early"; cat "$log"; exit 1; }
+            sleep 1
+          done
+          echo "no Luna Media Player window after 90s"
+          cat "$log"
+          exit 1
+          EOF
+          xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- bash "$RUNNER_TEMP/smoke.sh"
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: luna-media-player-deb
+          name: ${{ matrix.deb_artifact }}
           path: dist/*.deb
+          if-no-files-found: error
+
+      # The snap job packs this exact bundle. A tar keeps the file modes,
+      # which a plain artifact upload would drop.
+      - name: Archive the bundle for the snap job
+        run: tar -cf "$RUNNER_TEMP/bundle-${{ matrix.arch }}.tar" -C "build/linux/${{ matrix.arch }}/release" bundle
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: ${{ runner.temp }}/bundle-${{ matrix.arch }}.tar
+          if-no-files-found: error
+          retention-days: 3
+
+  snap:
+    name: Snap ${{ matrix.arch }}
+    needs: [linux]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            bundle: x64
+            runner: ubuntu-24.04
+            elf_machine: x86-64
+            triplet: x86_64-linux-gnu
+          - arch: arm64
+            bundle: arm64
+            runner: ubuntu-24.04-arm
+            elf_machine: ARM aarch64
+            triplet: aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundle-${{ matrix.bundle }}
+          path: ${{ runner.temp }}/bundle-artifact
+
+      - name: Stage the snap kit
+        run: |
+          mkdir -p "build/linux/${{ matrix.bundle }}/release"
+          tar -xf "$RUNNER_TEMP/bundle-artifact/bundle-${{ matrix.bundle }}.tar" \
+            -C "build/linux/${{ matrix.bundle }}/release"
+          tool/make_snap.sh --kit-only
+          ls -l dist/snap-kit dist/snap-kit/snap dist/snap-kit/bundle
+
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: dist/snap-kit
+
+      - name: Assert the snap is ${{ matrix.arch }}
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+          ELF_MACHINE: ${{ matrix.elf_machine }}
+          TRIPLET: ${{ matrix.triplet }}
+        run: |
+          ls -l "$SNAP_FILE"
+          case "$SNAP_FILE" in
+            *_${{ matrix.arch }}.snap) ;;
+            *) echo "::error::unexpected snap file name $SNAP_FILE"; exit 1 ;;
+          esac
+          command -v unsquashfs > /dev/null || sudo apt-get install -y squashfs-tools
+          unsquashfs -q -d "$RUNNER_TEMP/snap" "$SNAP_FILE"
+          sed -n '/^architectures:/,/^[a-z]/p' "$RUNNER_TEMP/snap/meta/snap.yaml"
+          grep -qx -- '- ${{ matrix.arch }}' "$RUNNER_TEMP/snap/meta/snap.yaml"
+          checked=0
+          bad=0
+          while IFS= read -r -d '' f; do
+            desc="$(file -b "$f")"
+            case "$desc" in ELF*) ;; *) continue ;; esac
+            checked=$((checked + 1))
+            case "$desc" in
+              *"$ELF_MACHINE"*) ;;
+              *) echo "::error file=$f::not $ELF_MACHINE: $desc"; bad=1 ;;
+            esac
+          done < <(find "$RUNNER_TEMP/snap" -type f -print0)
+          echo "checked $checked ELF files in the snap"
+          for f in luna_media_player lib/libmpv.so.2; do
+            file "$RUNNER_TEMP/snap/$f" | tee /dev/stderr | grep -q "$ELF_MACHINE"
+          done
+          [ "$checked" -ge 4 ] || { echo "::error::only $checked ELF files"; exit 1; }
+          [ "$bad" -eq 0 ] || exit 1
+
+          # snapcraft must have turned the triplet variable into this
+          # architecture's directory, and nothing else may be left over.
+          grep -n 'LD_LIBRARY_PATH' "$RUNNER_TEMP/snap/meta/snap.yaml"
+          grep -q "LD_LIBRARY_PATH: \$SNAP/usr/lib/$TRIPLET:\$SNAP/usr/lib/$TRIPLET/blas:\$SNAP/usr/lib/$TRIPLET/lapack:" \
+            "$RUNNER_TEMP/snap/meta/snap.yaml"
+          if grep -n 'CRAFT_ARCH' "$RUNNER_TEMP/snap/meta/snap.yaml"; then
+            echo "::error::snap.yaml still holds an unexpanded architecture variable"
+            exit 1
+          fi
+          # The libraries that path exists for are really in the snap.
+          ls -l "$RUNNER_TEMP/snap/usr/lib/$TRIPLET/blas" "$RUNNER_TEMP/snap/usr/lib/$TRIPLET/lapack"
+          ls "$RUNNER_TEMP/snap/usr/lib/$TRIPLET/blas"/libblas.so.3 \
+              "$RUNNER_TEMP/snap/usr/lib/$TRIPLET/lapack"/liblapack.so.3
+
+      # Installs the snap built above (with its gnome content snap) and runs
+      # it confined under Xvfb. The app links libmpv, whose ffmpeg chain needs
+      # libblas and liblapack from the directories the snap's LD_LIBRARY_PATH
+      # names, so the window only appears when that path is right for this
+      # architecture.
+      - name: Install the snap and run it
+        timeout-minutes: 15
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+        run: |
+          sudo apt-get install -y xvfb xauth xdotool
+          sudo snap install --dangerous "$SNAP_FILE"
+          snap list
+          cat > "$RUNNER_TEMP/snap-smoke.sh" <<'EOF'
+          log="$RUNNER_TEMP/snap-smoke.log"
+          luna-media-player > "$log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 120); do
+            if xdotool search --onlyvisible --name '^Luna Media Player$' > /dev/null 2>&1; then
+              echo "Luna Media Player window is up after ${i}s"
+              sleep 5
+              kill -0 "$pid" || { echo "luna-media-player died after showing its window"; cat "$log"; exit 1; }
+              kill "$pid"
+              cat "$log"
+              exit 0
+            fi
+            kill -0 "$pid" 2> /dev/null || { echo "luna-media-player exited early"; cat "$log"; exit 1; }
+            sleep 1
+          done
+          echo "no Luna Media Player window after 120s"
+          cat "$log"
+          exit 1
+          EOF
+          xvfb-run -a -s "-screen 0 1280x800x24 -ac" bash "$RUNNER_TEMP/snap-smoke.sh"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.arch }}
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+
+  release:
+    name: Release assets
+    needs: [linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: lib/src/app_info.dart
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: 'luna-media-player-deb*'
+          path: assets
+          merge-multiple: true
+
+      - name: Select the release assets
+        id: select
+        run: |
+          VERSION="$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)"
+          FILES="assets/luna-media-player_${VERSION}_amd64.deb assets/luna-media-player_${VERSION}_arm64.deb"
+          ls -l assets
+          ls -l $FILES
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to release ${{ github.event.release.tag_name }}
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ steps.select.outputs.version }}
+          FILES: ${{ steps.select.outputs.files }}
+        run: |
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::release tag $TAG does not match lib/src/app_info.dart version $VERSION"
+            exit 1
+          fi
+          # Attach what the release lacks. An asset that is already there
+          # (built and uploaded by hand) is left exactly as it is.
+          existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for f in $FILES; do
+            if grep -qxF -- "$(basename "$f")" <<< "$existing"; then
+              echo "$(basename "$f") is already on release $TAG, skipping"
+            else
+              gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
