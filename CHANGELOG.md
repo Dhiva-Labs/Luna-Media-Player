@@ -4,6 +4,19 @@ All notable changes to Luna Media Player are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Linux ARM64 (aarch64) support: the build, `.deb` and snap scripts build for
+  the architecture of the machine they run on, and CI builds, tests and
+  packages both x86-64 and ARM64, attaching the ARM64 `.deb` to each release.
+
+### Fixed
+
+- The snap's `LD_LIBRARY_PATH` named the x86-64 library directories only; it
+  now follows the architecture the snap is built for.
+
 ## [1.0.0] — 2026-07-18
 
 First release.
