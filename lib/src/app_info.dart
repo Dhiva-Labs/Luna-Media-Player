@@ -7,7 +7,7 @@
 abstract final class AppInfo {
   static const name = 'Luna Media Player';
   static const vendor = 'DhivaLabs';
-  static const version = '1.0.0';
+  static const version = '1.0.1';
   static const homepage = 'https://github.com/Dhiva-Labs/Luna-Media-Player';
 
   /// Shown in the About dialog. The look is an homage to a Microsoft product;

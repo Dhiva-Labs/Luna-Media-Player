@@ -60,8 +60,8 @@ Build a Debian package and install it:
 
 ```sh
 tool/make_deb.sh                  # writes dist/luna-media-player_<version>_<arch>.deb
-sudo apt install ./dist/luna-media-player_1.0.0_amd64.deb    # x86-64
-sudo apt install ./dist/luna-media-player_1.0.0_arm64.deb    # ARM64 (aarch64)
+sudo apt install ./dist/luna-media-player_1.0.1_amd64.deb    # x86-64
+sudo apt install ./dist/luna-media-player_1.0.1_arm64.deb    # ARM64 (aarch64)
 ```
 
 The Releases page carries a prebuilt `_amd64.deb` and `_arm64.deb`.
