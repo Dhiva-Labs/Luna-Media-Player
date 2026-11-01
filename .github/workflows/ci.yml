@@ -5,8 +5,13 @@ name: CI
 # every architecture is built on a machine of that architecture. The snap jobs
 # pack the bundle the matching Linux job built into the amd64 and arm64 snaps.
 #
+# The distros, aur and flatpak jobs repackage the same .deb for Fedora/RHEL/
+# openSUSE (.rpm), Arch (.pkg.tar.zst and the AUR PKGBUILD), any glibc
+# distribution (AppImage) and Flatpak, and install and run each one on the
+# real distribution.
+#
 # Every run keeps the packages as workflow artifacts. When a GitHub release is
-# published, the release job attaches the .deb of each architecture to it,
+# published, the release job attaches all of them, for each architecture,
 # skipping any asset the release already has (so a hand-uploaded package is
 # never replaced, and a release published with notes only is completed).
 on:
@@ -307,9 +312,169 @@ jobs:
           path: ${{ steps.build.outputs.snap }}
           if-no-files-found: error
 
+  # Repackages each architecture's .deb for Fedora/RHEL/openSUSE (.rpm),
+  # Arch (.pkg.tar.zst) and any glibc distribution (AppImage), then installs
+  # every one of them on the real distribution and runs it. The .rpm and the
+  # Arch package use the distribution's libmpv; the AppImage (and the
+  # Flatpak, from the tree uploaded here) carry libmpv's whole dependency
+  # chain, copied from this runner by bundle-libmpv.sh.
+  distros:
+    name: Other distros ${{ matrix.arch }}
+    needs: [linux]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            deb_arch: amd64
+            runner: ubuntu-24.04
+            deb_artifact: luna-media-player-deb
+          - arch: arm64
+            deb_arch: arm64
+            runner: ubuntu-24.04-arm
+            deb_artifact: luna-media-player-deb-arm64
+    env:
+      NFPM_VERSION: '2.48.0'
+      APPIMAGETOOL_VERSION: '1.9.1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.deb_artifact }}
+          path: deb
+
+      # libmpv2: the same Ubuntu package the .deb depends on, so ldd can
+      # resolve the chain bundle-libmpv.sh copies. patchelf sets its RUNPATHs.
+      - name: Install nfpm, appimagetool, libmpv2 and patchelf
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv2 patchelf
+          case "$(uname -m)" in
+            x86_64) nfpm_arch=x86_64; ai_arch=x86_64 ;;
+            aarch64) nfpm_arch=arm64; ai_arch=aarch64 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP/bin"
+          tarball="nfpm_${NFPM_VERSION}_Linux_${nfpm_arch}.tar.gz"
+          gh release download "v$NFPM_VERSION" -R goreleaser/nfpm -p "$tarball" -p checksums.txt
+          grep " $tarball\$" checksums.txt | sha256sum -c -
+          tar -xzf "$tarball" nfpm
+          gh release download "$APPIMAGETOOL_VERSION" -R AppImage/appimagetool \
+            -p "appimagetool-$ai_arch.AppImage" -O appimagetool
+          chmod +x appimagetool
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Build .rpm, Arch package and AppImage
+        run: |
+          VERSION="$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)"
+          dpkg-deb -x deb/*.deb "$RUNNER_TEMP/root"
+          cp -a "$RUNNER_TEMP/root" "$RUNNER_TEMP/bundled"
+          packaging/linux-distros/bundle-libmpv.sh "$RUNNER_TEMP/bundled" opt/luna-media-player/lib
+          VERSION="$VERSION" APPIMAGE_ROOT="$RUNNER_TEMP/bundled" \
+            packaging/linux-distros/pack.sh "$RUNNER_TEMP/root" ${{ matrix.deb_arch }} dist
+          # The Flatpak job builds from the self-contained tree; tar keeps
+          # modes and symlinks, which a plain artifact upload would drop.
+          tar -C "$RUNNER_TEMP/bundled" -cf "$RUNNER_TEMP/tree.tar" .
+
+      - name: Install and run on Fedora, openSUSE and Arch
+        run: packaging/linux-distros/verify.sh dist ${{ matrix.deb_arch }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: distros-${{ matrix.arch }}
+          path: |
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+            dist/*.AppImage
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tree-${{ matrix.arch }}
+          path: ${{ runner.temp }}/tree.tar
+          if-no-files-found: error
+          retention-days: 3
+
+  # AUR recipe: PKGBUILD + .SRCINFO for luna-media-player-bin, rendered with
+  # this build's checksums and proven with makepkg on archlinux:latest.
+  aur:
+    name: AUR PKGBUILD
+    needs: [linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: 'luna-media-player-deb*'
+          path: debs
+          merge-multiple: true
+
+      - name: Render and check the PKGBUILD
+        run: |
+          VERSION="$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)"
+          VERSION="$VERSION" packaging/arch/aur.sh debs/*_amd64.deb debs/*_arm64.deb dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aur
+          path: dist/*-aur.tar.gz
+          if-no-files-found: error
+
+  # Builds the Flatpak bundle from the self-contained tree of the distros
+  # job, installs it in the builder container and runs it there.
+  flatpak:
+    name: Flatpak ${{ matrix.arch }}
+    needs: [distros]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, fp_arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: arm64, fp_arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: tree-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+
+      - name: Unpack the installed tree
+        id: v
+        run: |
+          mkdir -p packaging/flatpak/tree
+          tar -xf "$RUNNER_TEMP/tree.tar" -C packaging/flatpak/tree
+          echo "version=$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)" >> "$GITHUB_OUTPUT"
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/com.dhivalabs.luna_media_player.yml
+          bundle: luna-media-player-${{ steps.v.outputs.version }}-${{ matrix.fp_arch }}.flatpak
+          arch: ${{ matrix.fp_arch }}
+          artifact-name: flatpak-${{ matrix.arch }}
+          cache: false
+
+      - name: Install the bundle and run it
+        run: |
+          packaging/flatpak/test-bundle.sh \
+            luna-media-player-${{ steps.v.outputs.version }}-${{ matrix.fp_arch }}.flatpak \
+            com.dhivalabs.luna_media_player '^Luna Media Player$'
+
   release:
     name: Release assets
-    needs: [linux]
+    needs: [linux, distros, aur, flatpak]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -326,11 +491,35 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: 'distros-*'
+          path: assets
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: aur
+          path: assets
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: 'flatpak-*'
+          path: assets
+          merge-multiple: true
+
       - name: Select the release assets
         id: select
         run: |
           VERSION="$(sed -n "s/.*version = '\([^']*\)'.*/\1/p" lib/src/app_info.dart)"
           FILES="assets/luna-media-player_${VERSION}_amd64.deb assets/luna-media-player_${VERSION}_arm64.deb"
+          for a in x86_64 aarch64; do
+            FILES="$FILES assets/luna-media-player-${VERSION}-1.${a}.rpm"
+            FILES="$FILES assets/luna-media-player-${VERSION}-1-${a}.pkg.tar.zst"
+            FILES="$FILES assets/Luna-Media-Player-${VERSION}-${a}.AppImage"
+            FILES="$FILES assets/luna-media-player-${VERSION}-${a}.flatpak"
+          done
+          FILES="$FILES assets/luna-media-player-bin-${VERSION}-aur.tar.gz"
           ls -l assets
           ls -l $FILES
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
