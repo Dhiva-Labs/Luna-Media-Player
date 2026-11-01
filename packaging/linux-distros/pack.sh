@@ -16,7 +16,8 @@
 # Package metadata comes from distro.conf next to this script. VERSION must be
 # set in the environment (the upstream version, without a Debian revision).
 # Needs nfpm and, for the AppImage, appimagetool: on PATH, or set NFPM and
-# APPIMAGETOOL. Also objdump (binutils) and file.
+# APPIMAGETOOL. Also objdump (binutils) and file. Optional: APPIMAGE_ROOT and
+# TREE_TARBALL (step 1).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +29,10 @@ out="$(cd "$3" && pwd)"
 
 # shellcheck source=/dev/null
 . "$here/distro.conf"
+# The optional lists distro.conf may leave out are empty.
+for v in EXCLUDE PACKAGE_EXCLUDE RPM_REQUIRES RPM_RECOMMENDS ARCH_DEPENDS ARCH_OPTDEPENDS AUR_SOURCES; do
+  declare -p "$v" > /dev/null 2>&1 || declare -a "$v=()"
+done
 : "${VERSION:?set VERSION to the package version, e.g. 1.2.3}"
 : "${NAME:?distro.conf must set NAME}"
 NFPM="${NFPM:-nfpm}"
@@ -48,6 +53,16 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # --- 1. The tree, minus Debian-only files -----------------------------------
+# $1: tree, then paths relative to it. A path that is not there is an error,
+# so a stale list cannot pass unnoticed.
+drop() {
+  local t="$1" p
+  shift
+  for p in "$@"; do
+    [ -e "$t/$p" ] || { echo "$p is not in the tree" >&2; exit 1; }
+    rm -rf "${t:?}/$p"
+  done
+}
 # $1: source tree, $2: destination.
 prepare_tree() {
   mkdir -p "$2"
@@ -56,6 +71,8 @@ prepare_tree() {
   if [ -d "$2/usr/share/doc" ]; then
     find "$2/usr/share/doc" -name 'changelog.Debian.gz' -delete
   fi
+  # Files no new format ships (distro.conf EXCLUDE says why).
+  drop "$2" "${EXCLUDE[@]}"
   if [ -n "${LICENSE_FILE:-}" ]; then
     install -Dm644 "$LICENSE_FILE" "$2/usr/share/licenses/$NAME/LICENSE"
   fi
@@ -65,11 +82,18 @@ prepare_tree() {
 tree="$work/root"
 prepare_tree "$src_root" "$tree"
 # Files the .rpm and the Arch package take from the distribution instead
-# (distro.conf says why).
-for p in "${PACKAGE_EXCLUDE[@]}"; do
-  [ -e "$tree/$p" ] || { echo "PACKAGE_EXCLUDE: $p is not in the tree" >&2; exit 1; }
-  rm -rf "${tree:?}/$p"
-done
+# (distro.conf PACKAGE_EXCLUDE says why).
+drop "$tree" "${PACKAGE_EXCLUDE[@]}"
+
+# The tree for the AppImage and the Flatpak. APPIMAGE_ROOT, when set, is the
+# installed tree with the libraries those two must carry themselves added
+# (bundle-libmpv.sh); PACKAGE_EXCLUDE does not apply to it. TREE_TARBALL,
+# when set, receives it as a tar (modes and symlinks kept) for the Flatpak.
+gui_tree="$work/gui-root"
+prepare_tree "${APPIMAGE_ROOT:-$src_root}" "$gui_tree"
+if [ -n "${TREE_TARBALL:-}" ]; then
+  tar -C "$gui_tree" -cf "$TREE_TARBALL" .
+fi
 
 # --- 2. Runtime dependencies ------------------------------------------------
 # rpm: every shared library the ELF files need that the package does not ship
@@ -175,12 +199,23 @@ write_config() {
   echo "  rpm:"
   echo "    depends:"
   for d in "${rpm_requires[@]}"; do echo "      - $(q "$d")"; done
+  # Tools the app uses when they are there (the .deb's Recommends):
+  # RPM_RECOMMENDS (file paths or package names) and ARCH_OPTDEPENDS
+  # ('package: what for').
+  if [ "${#RPM_RECOMMENDS[@]}" -gt 0 ]; then
+    echo "    recommends:"
+    for d in "${RPM_RECOMMENDS[@]}"; do echo "      - $(q "$d")"; done
+  fi
   echo "  archlinux:"
   if [ "${#arch_depends[@]}" -gt 0 ]; then
     echo "    depends:"
     for d in "${arch_depends[@]}"; do echo "      - $(q "$d")"; done
   else
     echo "    depends: []"
+  fi
+  if [ "${#ARCH_OPTDEPENDS[@]}" -gt 0 ]; then
+    echo "    suggests:"
+    for d in "${ARCH_OPTDEPENDS[@]}"; do echo "      - $(q "$d")"; done
   fi
   echo "rpm:"
   echo "  summary: $(q "$SUMMARY")"
@@ -203,19 +238,18 @@ if [ "${PACK_DEBUG:-0}" = 1 ]; then cat "$work/nfpm-rpm.yaml"; fi
 "$NFPM" pkg --config "$work/nfpm-arch.yaml" --packager archlinux --target "$out/"
 
 # --- 4. AppImage ------------------------------------------------------------
-# The AppImage carries the same tree. Libraries every desktop already has
-# (GTK 3, glib, glibc, Mesa) stay on the host, as with every other GTK
+# The AppImage carries the GUI tree (step 1). Libraries every desktop already
+# has (GTK 3, glib, glibc, Mesa) stay on the host, as with every other GTK
 # AppImage; anything rarer must be inside the tree, or the AppImage fails on
-# hosts without it. APPIMAGE_ROOT, when set, is the installed tree with those
-# libraries added (bundle-libmpv.sh); it replaces <root> here, and
-# PACKAGE_EXCLUDE does not apply to it.
+# hosts without it.
 if [ "${APPIMAGE:-0}" = 1 ]; then
   : "${APP_NAME:?distro.conf must set APP_NAME for the AppImage}"
   : "${EXEC:?distro.conf must set EXEC (main executable, relative to the root)}"
   : "${DESKTOP:?distro.conf must set DESKTOP (.desktop file, relative to the root)}"
   : "${ICON:?distro.conf must set ICON (PNG icon, relative to the root)}"
   appdir="$work/AppDir"
-  prepare_tree "${APPIMAGE_ROOT:-$src_root}" "$appdir"
+  mkdir -p "$appdir"
+  cp -a "$gui_tree/." "$appdir/"
   [ -x "$appdir/$EXEC" ] || { echo "EXEC $EXEC is not an executable in the tree" >&2; exit 1; }
 
   desktop="$appdir/$(basename "$DESKTOP")"

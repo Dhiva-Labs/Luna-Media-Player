@@ -2,14 +2,21 @@
 # Makes an installed tree self-contained for the AppImage and the Flatpak,
 # which cannot depend on a distribution's libmpv package.
 #
-# usage: bundle-libmpv.sh <tree> <lib dir, relative to the tree>
+# usage: bundle-libmpv.sh <tree> <lib dir, relative to the tree> [<tool>...]
 #
-# <lib dir> is where the app's executable finds libmpv.so.2 (its RUNPATH,
-# $ORIGIN/lib for a Flutter bundle). libmpv's dependency chain (ffmpeg,
-# libass, libplacebo, ...), as this Ubuntu runner resolves it, is copied into
-# <lib dir>/mpv/, and RUNPATH ($ORIGIN) ties the chain together, so no
-# LD_LIBRARY_PATH is needed and the host's own copies of the shared desktop
-# libraries are not shadowed for the rest of the process.
+# <lib dir> is the Flutter bundle's lib/ (the executable's RUNPATH is
+# $ORIGIN/lib). libmpv.so.2 goes there (the app's own copy, or this runner's
+# if the tree has none), and its dependency chain (ffmpeg, libass,
+# libplacebo, ...), as this Ubuntu runner resolves it, into <lib dir>/mpv/.
+# RUNPATH ($ORIGIN) ties the chain together, so no LD_LIBRARY_PATH is needed
+# and the host's own copies of the shared desktop libraries are not shadowed
+# for the rest of the process. Every library in <lib dir> that needs
+# libmpv.so.2 (the media_kit plugin) gets RUNPATH $ORIGIN too, in place of
+# the build machine's paths it was linked with.
+#
+# Each <tool> (a program the app runs, e.g. ffmpeg) is copied from this
+# runner into <lib dir>/../tools/bin/, with its libraries in the same mpv/
+# folder.
 #
 # Left to the host: glibc and the compiler runtime, GTK 3 and the libraries
 # it is built on, the X11/Wayland client libraries, the GL/GPU stack (it must
@@ -17,12 +24,14 @@
 # That is what every GTK desktop and the GNOME Flatpak runtime have. Every
 # other library in the chain is copied, with its Debian copyright file.
 #
-# Needs libmpv2 installed on the runner (so ldd resolves the whole chain),
-# patchelf, and dpkg (to find each library's package).
+# Needs libmpv2 (and the tools) installed on the runner, so ldd resolves the
+# whole chain, patchelf, and dpkg (to find each library's package).
 set -euo pipefail
-[ $# -eq 2 ] || { echo "usage: $0 <tree> <lib dir>" >&2; exit 2; }
+[ $# -ge 2 ] || { echo "usage: $0 <tree> <lib dir> [<tool>...]" >&2; exit 2; }
 tree="$(cd "$1" && pwd)"
 libdir="$tree/$2"
+shift 2
+tools=("$@")
 deps="$libdir/mpv"
 
 host_lib() {
@@ -69,18 +78,31 @@ fi
 
 # Where each soname resolves on this runner: ldd follows the whole chain.
 declare -A path=()
-while read -r soname arrow target _; do
-  [ "$arrow" = '=>' ] || continue
-  if [ "$target" = not ]; then echo "ldd: $soname not found on this runner" >&2; exit 1; fi
-  path["$soname"]="$target"
-done < <(ldd "$mpv")
+resolve() {
+  local soname arrow target rest
+  while read -r soname arrow target rest; do
+    [ "$arrow" = '=>' ] || continue
+    if [ "$target" = not ]; then echo "ldd $1: $soname not found on this runner" >&2; exit 1; fi
+    path["$soname"]="$target"
+  done < <(ldd "$1")
+}
+resolve "$mpv"
 
-# Walk the NEEDED graph from libmpv, stopping at host libraries, so only what
-# the chain itself needs is copied (not the host libraries' own dependencies).
 mkdir -p "$deps/licenses"
-declare -A seen=()
 queue=("$mpv")
 packages=("$(pkg_of "$sys_mpv")")
+for t in "${tools[@]}"; do
+  real="$(readlink -f "$(command -v "$t")")"
+  install -Dm755 "$real" "$libdir/../tools/bin/$t"
+  patchelf --set-rpath '$ORIGIN/../../lib/mpv' "$libdir/../tools/bin/$t"
+  resolve "$real"
+  packages+=("$(pkg_of "$real")")
+  queue+=("$libdir/../tools/bin/$t")
+done
+
+# Walk the NEEDED graph, stopping at host libraries, so only what the chain
+# itself needs is copied (not the host libraries' own dependencies).
+declare -A seen=()
 copied=0
 while [ "${#queue[@]}" -gt 0 ]; do
   f="${queue[0]}"
@@ -89,6 +111,7 @@ while [ "${#queue[@]}" -gt 0 ]; do
     [ -n "${seen[$soname]:-}" ] && continue
     seen["$soname"]=1
     host_lib "$soname" && continue
+    [ "$soname" = libmpv.so.2 ] && continue
     src="${path[$soname]:-}"
     [ -n "$src" ] || { echo "$soname (needed by $(basename "$f")) did not resolve" >&2; exit 1; }
     real="$(readlink -f "$src")"
@@ -100,6 +123,13 @@ while [ "${#queue[@]}" -gt 0 ]; do
   done < <(objdump -p "$f" | awk '$1 == "NEEDED" { print $2 }')
 done
 patchelf --set-rpath '$ORIGIN/mpv' "$mpv"
+for f in "$libdir"/*.so*; do
+  [ "$f" = "$mpv" ] && continue
+  if objdump -p "$f" | awk '$1 == "NEEDED" { print $2 }' | grep -x libmpv.so.2 > /dev/null; then
+    patchelf --set-rpath '$ORIGIN' "$f"
+    echo "RUNPATH of ${f#"$tree"/} is now \$ORIGIN"
+  fi
+done
 
 # Licences of what was copied, and the exact Ubuntu package versions, so the
 # matching sources can be fetched (apt-get source <package>=<version>).
@@ -109,6 +139,6 @@ for pkg in "${packages[@]}"; do
 done
 dpkg-query -W -f '${Package} ${Version}\n' "${packages[@]}" > "$deps/licenses/PACKAGES.txt"
 
-echo "bundled $copied libraries from ${#packages[@]} Ubuntu packages into ${deps#"$tree"/}:"
+echo "bundled libmpv${tools[*]:+ and ${tools[*]}} with $copied libraries from ${#packages[@]} Ubuntu packages into ${deps#"$tree"/}:"
 du -sh "$deps"
 cat "$deps/licenses/PACKAGES.txt"

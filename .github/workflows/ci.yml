@@ -375,11 +375,10 @@ jobs:
           dpkg-deb -x deb/*.deb "$RUNNER_TEMP/root"
           cp -a "$RUNNER_TEMP/root" "$RUNNER_TEMP/bundled"
           packaging/linux-distros/bundle-libmpv.sh "$RUNNER_TEMP/bundled" opt/luna-media-player/lib
-          VERSION="$VERSION" APPIMAGE_ROOT="$RUNNER_TEMP/bundled" \
-            packaging/linux-distros/pack.sh "$RUNNER_TEMP/root" ${{ matrix.deb_arch }} dist
-          # The Flatpak job builds from the self-contained tree; tar keeps
+          # TREE_TARBALL: the AppImage's tree, for the Flatpak job; tar keeps
           # modes and symlinks, which a plain artifact upload would drop.
-          tar -C "$RUNNER_TEMP/bundled" -cf "$RUNNER_TEMP/tree.tar" .
+          VERSION="$VERSION" APPIMAGE_ROOT="$RUNNER_TEMP/bundled" TREE_TARBALL="$RUNNER_TEMP/tree.tar" \
+            packaging/linux-distros/pack.sh "$RUNNER_TEMP/root" ${{ matrix.deb_arch }} dist
 
       - name: Install and run on Fedora, openSUSE and Arch
         run: packaging/linux-distros/verify.sh dist ${{ matrix.deb_arch }}

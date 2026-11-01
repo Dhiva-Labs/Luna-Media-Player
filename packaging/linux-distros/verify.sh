@@ -43,8 +43,9 @@ shopt -u nullglob
 run_in() {
   local image="$1" mode="$2" file="$3"
   echo "::group::$mode on $image: $(basename "$file")"
+  # The repository is mounted too, for a SMOKE_SCRIPT of the repo's own.
   docker run --rm \
-    -v "$out:/pkgs:ro" -v "$here:/linux-distros:ro" \
+    -v "$out:/pkgs:ro" -v "$here:/linux-distros:ro" -v "$here/../..:/repo:ro" \
     -e MODE="$mode" -e FILE="/pkgs/$(basename "$file")" \
     "$image" bash /linux-distros/in-container.sh
   echo "::endgroup::"

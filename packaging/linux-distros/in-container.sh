@@ -8,21 +8,25 @@ set -euo pipefail
 
 # Display and GL stack for the GUI smoke test, per distribution: what a
 # desktop installation has anyway (Flutter loads EGL/GL at run time, so the
-# package itself does not depend on it). xdotool finds the app's window.
+# package itself does not depend on it). xdotool finds the app's window;
+# SMOKE_PACKAGES_<DISTRO> from distro.conf adds what a SMOKE_SCRIPT needs.
+# shellcheck disable=SC2086
 case "$MODE" in
   rpm|appimage)
     dnf -y -q install file findutils which procps-ng \
       xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers mesa-libEGL mesa-libGL \
-      dbus-daemon xdotool
+      dbus-daemon xdotool ${SMOKE_PACKAGES_FEDORA:-}
     ;;
   rpm-suse)
     zypper -n -q --gpg-auto-import-keys refresh
-    zypper -n -q install file findutils which procps \
-      xvfb-run Mesa-dri Mesa-libEGL1 Mesa-libGL1 dbus-1 xdotool
+    # xvfb-run needs awk but does not require it, and Tumbleweed's
+    # dbus-run-session lives in dbus-1-daemon (dbus-1 is dbus-broker now).
+    zypper -n -q install file findutils which procps gawk \
+      xvfb-run Mesa-dri Mesa-libEGL1 Mesa-libGL1 dbus-1 dbus-1-daemon xdotool ${SMOKE_PACKAGES_SUSE:-}
     ;;
   pacman)
     pacman -Syu --noconfirm --needed -q file findutils which procps-ng \
-      xorg-server-xvfb xorg-xauth mesa dbus xdotool
+      xorg-server-xvfb xorg-xauth mesa dbus xdotool ${SMOKE_PACKAGES_ARCH:-}
     ;;
 esac
 
@@ -86,6 +90,12 @@ if [ -n "${SMOKE_CMD:-}" ]; then
 fi
 if [ -n "${GUI_CMD:-}" ]; then
   if [ -n "$cmd_prefix" ]; then gui=("$cmd_prefix"); else read -r -a gui <<< "$GUI_CMD"; fi
+fi
+if [ -n "${GUI_CMD:-}" ] && [ -n "${SMOKE_SCRIPT:-}" ]; then
+  # The repository's own smoke test (relative to the repository root), which
+  # proves more than a window: it gets the command to start as $1.
+  xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session -- bash "/repo/$SMOKE_SCRIPT" "${gui[@]}"
+elif [ -n "${GUI_CMD:-}" ]; then
   cat > /tmp/smoke.sh <<'EOS'
 log=/tmp/smoke.log
 "$@" > "$log" 2>&1 &
