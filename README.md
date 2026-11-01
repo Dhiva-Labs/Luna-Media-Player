@@ -2,6 +2,7 @@
 
 [![ARM64 builds](https://github.com/Dhiva-Labs/Luna-Media-Player/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dhiva-Labs/Luna-Media-Player/actions/workflows/ci.yml)
 ![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational?logo=linux&logoColor=white)
+![Linux: deb | rpm | Arch | AppImage | Flatpak | Snap](https://img.shields.io/badge/Linux-deb%20%7C%20rpm%20%7C%20Arch%20%7C%20AppImage%20%7C%20Flatpak%20%7C%20Snap-informational?logo=linux&logoColor=white)
 
 An XP-era music and video player for Ubuntu and other Linux desktops, built
 with Flutter. It plays the media already on your machine — no accounts, no
@@ -65,6 +66,40 @@ sudo apt install ./dist/luna-media-player_1.0.1_arm64.deb    # ARM64 (aarch64)
 ```
 
 The Releases page carries a prebuilt `_amd64.deb` and `_arm64.deb`.
+
+### Other distributions
+
+From the next release on, each release also carries these, for x86-64
+(`x86_64`) and ARM64 (`aarch64`). CI installs every one of them on the
+distribution named and starts the player there.
+
+| Distribution | File | Install |
+|---|---|---|
+| Fedora, RHEL/Rocky/Alma | `luna-media-player-<version>-1.<arch>.rpm` | `sudo dnf install ./luna-media-player-1.0.1-1.x86_64.rpm` |
+| openSUSE Tumbleweed | the same `.rpm` | `sudo zypper install --allow-unsigned-rpm ./luna-media-player-1.0.1-1.x86_64.rpm` |
+| Arch, Manjaro, EndeavourOS | `luna-media-player-<version>-1-<arch>.pkg.tar.zst` | `sudo pacman -U ./luna-media-player-1.0.1-1-x86_64.pkg.tar.zst` |
+| Any distribution | `Luna-Media-Player-<version>-<arch>.AppImage` | `chmod +x Luna-Media-Player-1.0.1-x86_64.AppImage && ./Luna-Media-Player-1.0.1-x86_64.AppImage` |
+| Any distribution with Flatpak | `luna-media-player-<version>-<arch>.flatpak` | `flatpak install --user ./luna-media-player-1.0.1-x86_64.flatpak` |
+
+- The `.rpm` and the Arch package use the distribution's own libmpv (Fedora
+  `mpv-libs`, openSUSE `libmpv2`, Arch `mpv`) and through it the
+  distribution's ffmpeg. Fedora's and openSUSE's ffmpeg leave out some
+  patent-encumbered codecs (H.264/HEVC video among them); install the full
+  ffmpeg from RPM Fusion or Packman to play those.
+- The AppImage and the Flatpak carry libmpv with Ubuntu 24.04's ffmpeg and the
+  rest of its dependency chain, so they play the same formats as the `.deb`
+  on any distribution. The AppImage needs GTK 3 and the usual GL and ALSA
+  libraries from the system; the Flatpak needs the GNOME runtime from Flathub
+  (`flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
+- The AppImage carries libraries from Ubuntu 24.04 and needs glibc 2.39 or
+  newer (Fedora 40+, openSUSE Tumbleweed, current Arch; not openSUSE Leap 15
+  or RHEL 9). The `.rpm` asks for the glibc its own files use, so dnf and
+  zypper refuse a system that is too old. On RHEL, Rocky and Alma, `mpv-libs`
+  comes from EPEL; CI tests the `.rpm` on Fedora and openSUSE Tumbleweed.
+- The `.rpm` is not signed, hence `--allow-unsigned-rpm` on openSUSE.
+- An AUR recipe (`luna-media-player-bin`, PKGBUILD + .SRCINFO built from the
+  release `.deb`) is attached as `luna-media-player-bin-<version>-aur.tar.gz`;
+  it is not on the AUR yet.
 
 The package registers a launcher and file associations, so audio and video
 files offer **Open With → Luna Media Player**. Files and folders can also be

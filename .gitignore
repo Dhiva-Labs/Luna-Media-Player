@@ -49,3 +49,6 @@ third_party/mpv/
 
 # Packaged artefacts (tool/make_deb.sh)
 /dist/
+
+# Flatpak build input, unpacked by CI (packaging/flatpak/README.md)
+/packaging/flatpak/tree/

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.dhivalabs.luna_media_player</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Luna Media Player</name>
+  <summary>XP-era music and video player for the Linux desktop</summary>
+  <description>
+    <p>Luna Media Player plays the music and video already on your machine, wrapped in the look of the desktop players of 2004: a library with tag reading and search, a Now Playing list, and eight flowing visualisations.</p>
+    <p>Playback is handled by libmpv, so it opens essentially any format: MP3, FLAC, WAV, OGG, Opus, AAC, M4A and WMA, as well as MP4, MKV, AVI, WebM, MOV and WMV. No accounts, no streaming: it reads the files you already have.</p>
+  </description>
+  <launchable type="desktop-id">com.dhivalabs.luna_media_player.desktop</launchable>
+  <url type="homepage">https://github.com/Dhiva-Labs/Luna-Media-Player</url>
+  <url type="bugtracker">https://github.com/Dhiva-Labs/Luna-Media-Player/issues</url>
+  <developer id="com.dhivalabs">
+    <name>Dhiva Labs</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.1" date="2026-10-16"/>
+  </releases>
+</component>

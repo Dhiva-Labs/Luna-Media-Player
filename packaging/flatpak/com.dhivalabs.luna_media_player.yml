@@ -1,0 +1,59 @@
+# Flatpak manifest for Luna Media Player.
+#
+# Like the .rpm, Arch package and AppImage, this repackages the installed
+# tree of the .deb that CI builds, so the Flatpak ships the same binary as
+# every other format instead of a second build inside the sandbox. The
+# workflow unpacks that tree into packaging/flatpak/tree/ after
+# packaging/linux-distros/bundle-libmpv.sh has added libmpv's dependency
+# chain (ffmpeg and friends, from Ubuntu 24.04) under lib/mpv/: the runtime's
+# own ffmpeg has other sonames than the libmpv the app carries. A Flathub
+# submission needs `tree` swapped for an archive source and libmpv built from
+# source against the runtime; see README.md in this directory.
+id: com.dhivalabs.luna_media_player
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: luna-media-player
+finish-args:
+  # GTK needs a display socket; fallback-x11 covers X11-only desktops.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # GPU acceleration for Flutter's renderer and mpv's video output.
+  - --device=dri
+  # Sound output (mpv talks to PulseAudio or PipeWire's pulse server).
+  - --socket=pulseaudio
+  # The library scans ~/Music by default and plays the user's videos, by
+  # path, on every launch. Other folders and files come through the file
+  # chooser portal (file_picker uses it), which grants them on its own.
+  - --filesystem=xdg-music:ro
+  - --filesystem=xdg-videos:ro
+  # wakelock_plus keeps the screen on during video playback through the
+  # org.freedesktop.ScreenSaver interface.
+  - --talk-name=org.freedesktop.ScreenSaver
+modules:
+  - name: luna-media-player
+    buildsystem: simple
+    build-options:
+      # Stripping the Flutter AOT snapshot (libapp.so) leaves an app that
+      # cannot start, and the Ubuntu libraries are stripped already.
+      no-debuginfo: true
+      strip: false
+    sources:
+      - type: dir
+        path: tree
+        dest: tree
+      - type: file
+        path: com.dhivalabs.luna_media_player.metainfo.xml
+      - type: file
+        path: ../../LICENSE
+    build-commands:
+      # Flutter finds lib/ and data/ next to its executable, and the
+      # executable's RUNPATH ($ORIGIN/lib) finds the bundled libmpv.
+      - install -d /app/lib && cp -a tree/opt/luna-media-player /app/lib/luna-media-player
+      - install -d /app/bin && ln -s ../lib/luna-media-player/luna_media_player /app/bin/luna-media-player
+      - install -Dm644 tree/usr/share/applications/luna-media-player.desktop /app/share/applications/com.dhivalabs.luna_media_player.desktop
+      - desktop-file-edit --set-icon=com.dhivalabs.luna_media_player --set-key=Exec --set-value='luna-media-player %F' /app/share/applications/com.dhivalabs.luna_media_player.desktop
+      - install -Dm644 tree/usr/share/icons/hicolor/512x512/apps/luna-media-player.png /app/share/icons/hicolor/512x512/apps/com.dhivalabs.luna_media_player.png
+      - install -Dm644 LICENSE /app/share/licenses/com.dhivalabs.luna_media_player/LICENSE
+      - install -Dm644 com.dhivalabs.luna_media_player.metainfo.xml /app/share/metainfo/com.dhivalabs.luna_media_player.metainfo.xml

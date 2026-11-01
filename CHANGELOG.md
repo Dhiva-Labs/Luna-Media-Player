@@ -6,6 +6,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Packages for other Linux distributions, for x86-64 and ARM64, built from
+  the same build as the `.deb` and installed and started on each target in
+  CI: an `.rpm` for Fedora and openSUSE, an Arch Linux package, an AppImage
+  and a Flatpak bundle, plus an AUR recipe (`luna-media-player-bin`). The
+  release job attaches them to each published release.
+
 ## [1.0.1] — 2026-10-16
 
 ### Added
