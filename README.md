@@ -8,6 +8,8 @@ An XP-era music and video player for Ubuntu and other Linux desktops, built
 with Flutter. It plays the media already on your machine — no accounts, no
 streaming. Named after Luna, the Windows XP theme whose look it borrows.
 
+**Documentation:** step-by-step guides at [learn.dhivalabs.com](https://learn.dhivalabs.com/apps/luna-media-player/): [install](https://learn.dhivalabs.com/apps/luna-media-player/install) · [beginner guide](https://learn.dhivalabs.com/apps/luna-media-player/getting-started) · [troubleshooting](https://learn.dhivalabs.com/apps/luna-media-player/faq).
+
 The chrome is modelled directly on a WMP 10 screenshot: pale Luna-blue title
 bar with the navy caption glyphs, the feature taskbar where the active tab
 stands up in white (Rip, Burn, Sync and Guide are drawn, dimmed, because the
