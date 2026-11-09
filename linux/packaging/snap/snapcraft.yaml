@@ -17,7 +17,9 @@ description: |
 
   Published by Dhiva-Labs.
 license: MIT
-website: https://github.com/Dhiva-Labs/Luna-Media-Player
+website:
+  - https://github.com/Dhiva-Labs/Luna-Media-Player
+  - https://learn.dhivalabs.com/apps/luna-media-player/
 contact: dhivakar1010@gmail.com
 source-code: https://github.com/Dhiva-Labs/Luna-Media-Player
 issues: https://github.com/Dhiva-Labs/Luna-Media-Player/issues
